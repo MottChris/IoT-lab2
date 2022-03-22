@@ -3,7 +3,7 @@ var nodeimu = require('@trbll/nodeimu')
 var IMU = new nodeimu.IMU();
 var sense = require('@trbll/sense-hat-led');
 
-const { getDatabase, ref, onValue, set, update } = require('firebase/database');
+const { getDatabase, ref, onValue, set, update, DataSnapshot, get } = require('firebase/database');
 const { initializeApp } = require('firebase/app')
 
 // Import the functions you need from the SDKs you need
@@ -23,26 +23,73 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-const database = getDatabase();
-console.log(database);
+const db = getDatabase();
+// console.log(db);
 
-function writeSensorData(temp, humidity, light_row, light_col, light_r, light_g, light_b, update_light) {
-    const db = getDatabase();
-    set(ref(db, 'sensors/'), {
-      "temperature"     : temp,
-      "humidity"        : humidity,
-      "light_row"       : light_row,
-      "light_col"       : light_col,
-      "light_r"         : light_r,
-      "light_g"         : light_g,
-      "light_b"         : light_b,
-      "update_light"    : update_light
-    });
-
-    
-
-
+// initialize the database with starting values
+function initializeDB() {
+  const db = getDatabase();
+  set(ref(db, 'sensors/'), {
+    "temperature"     : 0.0,
+    "humidity"        : 0.0,
+    "light_row"       : 0,
+    "light_col"       : 0,
+    "light_r"         : 0,
+    "light_g"         : 0,
+    "light_b"         : 0,
+    "update_light"    : false
+  });
 }
 
+// update ONLY temperature and humidity values in firebase. This function is used in the 5 second interval callback ish
+function updateSensorData() {
+    const db = getDatabase();
+    var data = IMU.getValueSync();
 
-writeSensorData(0,0,0,0,0,0,0,0);
+    update(ref(db, 'sensors/'), {
+      "temperature" : data.temperature.toFixed(4),
+      "humidity"    : data.humidity.toFixed(4),
+    })
+
+    // set(ref(db, 'sensors/'), {
+    //   "temperature"     : data.temperature.toFixed(4),
+    //   "humidity"        : data.humidity.toFixed(4),
+    // });
+    console.log("Temperature & Humidity updated in firebase")
+}
+
+// call back for any time the update_light boolean value is changed from false to true
+const updateLightRef = ref(db, 'sensors/update_light')
+onValue(updateLightRef, (DataSnapshot) => {
+  console.log("update_light callback fired up fo")
+  const data = DataSnapshot.val();
+  console.log(data)
+
+  // get data and ensure it is atomic
+  const db = getDatabase();
+  get(ref(db, 'sensors/')).then((snapshot) => {
+    
+    console.log(snapshot.val());
+    const data = snapshot.val()
+    // set led lights
+    console.log(data.light_row)
+    console.log(data.light_col)
+    console.log(data.light_r)
+    console.log(data.light_g)
+    console.log(data.light_b)
+    sense.setPixel(data.light_row, data.light_col, [data.light_r, data.light_g, data.light_b])
+  })
+
+  // set led lights with sensor data
+
+  // return updated light value to false
+  update(ref(db, 'sensors/'), {
+    'update_light' : false
+  })
+});
+
+// BEGIN APP LOGIC HERE
+sense.clear()
+initializeDB();
+
+var interval = setInterval(updateSensorData, 5000)
